@@ -9,6 +9,10 @@ export function createLivePlusController({manifest,onCommand,onMessage,onConnect
   let connecting=false;
   let reconnectTimer=0;
   let lastConnectToken='';
+  let activeCode='';
+  let pendingCode='';
+  let currentAttemptManual=false;
+  let generation=0;
 
   const sdk=()=>window.LivePlusGameSDK;
   const status=(text,kind='')=>onStatus?.(text,kind);
@@ -30,39 +34,73 @@ export function createLivePlusController({manifest,onCommand,onMessage,onConnect
     return{code,display:formatCode(code),token:code,ticket:false};
   }
 
+  async function disposeSession(){
+    clearTimeout(reconnectTimer);
+    reconnectTimer=0;
+    const old=session;
+    session=null;
+    connecting=false;
+    activeCode='';
+    generation++;
+    if(!old)return;
+    for(const method of['disconnect','close','destroy']){
+      try{
+        if(typeof old?.[method]==='function'){
+          const result=old[method]();
+          if(result&&typeof result.then==='function')await result.catch(()=>{});
+          break;
+        }
+      }catch{}
+    }
+  }
+
   function bindSession(){
     if(session)return session;
     if(!sdk()?.Session)throw Error('SDK LIVE+ não carregou.');
-    session=new sdk().Session({storageKey:TOKEN_KEY,manifest});
-    session.addEventListener('connected',()=>{
+    const ownGeneration=++generation;
+    const created=new sdk().Session({storageKey:TOKEN_KEY,manifest});
+    session=created;
+    created.addEventListener('connected',()=>{
+      if(session!==created||generation!==ownGeneration)return;
       connecting=false;
-      const transport=session?.getTransport?.()||'online';
+      activeCode=pendingCode||activeCode;
+      const transport=created?.getTransport?.()||'online';
       status(`Painel conectado · ${transport}`,'ok');
-      onConnected?.(session);
+      onConnected?.(created,{manual:currentAttemptManual,code:activeCode});
     });
-    session.addEventListener('command',event=>onCommand?.(event.detail||{},session));
-    session.addEventListener('message',event=>onMessage?.(event.detail||{},session));
-    session.addEventListener('event',event=>onMessage?.(event.detail||{},session));
-    session.addEventListener('reconnecting',()=>{connecting=false;status('Reconectando ao painel…','warn')});
-    session.addEventListener('transport',event=>{
+    created.addEventListener('command',event=>{if(session===created)onCommand?.(event.detail||{},created)});
+    created.addEventListener('message',event=>{if(session===created)onMessage?.(event.detail||{},created)});
+    created.addEventListener('event',event=>{if(session===created)onMessage?.(event.detail||{},created)});
+    created.addEventListener('reconnecting',()=>{if(session!==created)return;connecting=false;status('Reconectando ao painel…','warn')});
+    created.addEventListener('transport',event=>{
+      if(session!==created)return;
       const detail=event.detail||{};
       if(detail.status==='disconnected')status('Painel desconectado · reconectando…','warn');
-      else if(detail.status==='connected')status(`Painel conectado · ${detail.transport||session?.getTransport?.()||'online'}`,'ok');
+      else if(detail.status==='connected')status(`Painel conectado · ${detail.transport||created?.getTransport?.()||'online'}`,'ok');
     });
-    session.addEventListener('rejected',event=>{connecting=false;status(event.detail?.reason||'Sessão recusada.','err')});
-    session.addEventListener('lost',()=>{connecting=false;status('Conexão perdida. Gere ou conecte uma nova sessão.','err')});
-    return session;
+    created.addEventListener('rejected',event=>{if(session!==created)return;connecting=false;status(event.detail?.reason||'Sessão recusada.','err')});
+    created.addEventListener('lost',()=>{if(session!==created)return;connecting=false;status('Conexão perdida. Gere ou conecte uma nova sessão.','err')});
+    return created;
   }
 
-  async function connect(raw,{silent=false}={}){
+  async function connect(raw,{silent=false,manual=true}={}){
     if(connecting)return false;
     const parsed=parseInput(raw);
     if(parsed.code.length!==8){if(!silent)status('Digite os 8 caracteres ou cole o ticket LIVE+.','err');return false}
+
+    const replacing=!!session&&!!activeCode&&parsed.code!==activeCode;
+    if(replacing){
+      status('Trocando sessão do painel…','warn');
+      await disposeSession();
+    }
+
     try{localStorage.setItem(CODE_KEY,parsed.display)}catch{}
     lastConnectToken=parsed.ticket?parsed.token:parsed.code;
+    pendingCode=parsed.code;
+    currentAttemptManual=!!manual;
     try{
       connecting=true;
-      status('Conectando ao painel…','warn');
+      status(replacing?'Conectando nova sessão…':'Conectando ao painel…','warn');
       await bindSession().connect(lastConnectToken);
       return true;
     }catch(error){
@@ -83,7 +121,7 @@ export function createLivePlusController({manifest,onCommand,onMessage,onConnect
       try{transport=session?.getTransport?.()||'offline'}catch{}
       if(!['offline','disconnected','unknown'].includes(transport))return;
       const saved=savedCode();
-      if(cleanCode(saved).length===8)await connect(saved,{silent:true});
+      if(cleanCode(saved).length===8)await connect(saved,{silent:true,manual:false});
     },delay);
   }
 
@@ -91,5 +129,9 @@ export function createLivePlusController({manifest,onCommand,onMessage,onConnect
   function sendEvent(payload){try{return session?.sendEvent?.(payload)}catch{} }
   function getTransport(){try{return session?.getTransport?.()||'offline'}catch{return'offline'}}
 
-  return{connect,sendState,sendEvent,getTransport,savedCode,scheduleReconnect,installPasteBridge,parseInput,formatCode,cleanCode,getSession:()=>session};
+  return{
+    connect,disposeSession,sendState,sendEvent,getTransport,savedCode,scheduleReconnect,
+    installPasteBridge,parseInput,formatCode,cleanCode,getSession:()=>session,
+    getActiveCode:()=>activeCode,isConnected:()=>!['offline','disconnected','unknown'].includes(getTransport())
+  };
 }
