@@ -24,12 +24,21 @@ export function dotProduct(a,b){
   return sum;
 }
 
+function qaVector(text=''){
+  const source=normalizeText(text)||'qa';
+  const vector=new Array(24).fill(0);
+  for(let i=0;i<source.length;i++)vector[(source.charCodeAt(i)+i*7)%vector.length]+=1;
+  const norm=Math.sqrt(vector.reduce((sum,value)=>sum+value*value,0))||1;
+  return vector.map(value=>value/norm);
+}
+
 export function createSemanticEngine(){
   let extractor=null;
   let loading=null;
   const cache=new Map();
 
   async function ensureModel(){
+    if(window.ADIVINHANDO_QA)return{qa:true};
     if(extractor)return extractor;
     if(loading)return loading;
     loading=(async()=>{
@@ -48,6 +57,7 @@ export function createSemanticEngine(){
   async function embed(text){
     const key=normalizeText(text);
     if(cache.has(key))return cache.get(key);
+    if(window.ADIVINHANDO_QA){const vector=qaVector(key);cache.set(key,vector);return vector}
     const model=await ensureModel();
     if(!model)return null;
     const out=await model(key,{pooling:'mean',normalize:true});
