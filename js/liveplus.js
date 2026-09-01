@@ -31,7 +31,7 @@ export function createLivePlusController({manifest,onCommand,onMessage,onConnect
       }
     }catch{}
     const code=cleanCode(text);
-    return{code,display:formatCode(code),token:code,ticket:false};
+    return{code,display:formatCode(code),token:code,ticket:false}
   }
 
   async function disposeSession(){
@@ -56,9 +56,10 @@ export function createLivePlusController({manifest,onCommand,onMessage,onConnect
 
   function bindSession(){
     if(session)return session;
-    if(!sdk()?.Session)throw Error('SDK LIVE+ não carregou.');
+    const Session=sdk()?.Session;
+    if(!Session)throw Error('SDK LIVE+ não carregou.');
     const ownGeneration=++generation;
-    const created=new sdk().Session({storageKey:TOKEN_KEY,manifest});
+    const created=new Session({storageKey:TOKEN_KEY,manifest});
     session=created;
     created.addEventListener('connected',()=>{
       if(session!==created||generation!==ownGeneration)return;
