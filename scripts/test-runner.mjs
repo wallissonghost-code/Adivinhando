@@ -45,7 +45,7 @@ async function browser(){
 
 async function newPage(chromium,viewport={width:390,height:844}){
   const browser=await chromium.launch({headless:true});
-  const context=await browser.newContext({viewportSize:viewport,isMobile:viewport.width<600,hasTouch:viewport.width<600});
+  const context=await browser.newContext({viewport,isMobile:viewport.width<600,hasTouch:viewport.width<600});
   const page=await context.newPage();
   await page.route('**/projeto-daniel/sdk/liveplus-game-sdk-v1.js*',route=>route.fulfill({status:200,contentType:'application/javascript',body:fakeSdk()}));
   return{browser,context,page};
@@ -120,11 +120,11 @@ async function visual(){
         await page.screenshot({path:path.join(outDir,`${vp.name}-game.png`),fullPage:true});
         await page.click('#panelButton');await page.waitForTimeout(80);
         const modal=await page.locator('.card').boundingBox();
-        if(!modal||modal.x<0||modal.x+modal.width>vp.width+1)issues.push('modal: vazando horizontalmente');
-        if(modal&&modal.width>vp.width-10)issues.push('modal: sem margem segura lateral');
+        if(!modal||modal.x<0||modal.x+modal.width>scan.innerWidth+1)issues.push('modal: vazando horizontalmente');
+        if(modal&&modal.width>scan.innerWidth-10)issues.push('modal: sem margem segura lateral');
         await page.screenshot({path:path.join(outDir,`${vp.name}-panel.png`),fullPage:true});
         if(consoleErrors.length)issues.push(...consoleErrors.map(e=>'browser: '+e));
-        report.push({...vp,status:issues.length?'fail':'pass',issues});
+        report.push({...vp,actualWidth:scan.innerWidth,actualHeight:scan.innerHeight,status:issues.length?'fail':'pass',issues});
       }finally{await browser.close()}
     }
   });
