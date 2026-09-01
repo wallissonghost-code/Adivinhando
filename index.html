@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Adivinhando — Live</title>
+  <style>
+    :root{color-scheme:dark;--bg:#071018;--card:#0f1b26;--line:#203040;--text:#f7fbff;--muted:#8fa6bb;--good:#4be38b;--hot:#ffb84d;--bad:#6f8aa1;--accent:#7c5cff}
+    *{box-sizing:border-box} body{margin:0;min-height:100vh;background:radial-gradient(circle at top,#132638 0,#071018 42%,#04090e 100%);font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--text)}
+    button,input{font:inherit}.app{width:min(1100px,100%);margin:auto;padding:18px;display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:18px}.stage,.panel{background:rgba(15,27,38,.94);border:1px solid var(--line);border-radius:24px;box-shadow:0 24px 80px rgba(0,0,0,.28)}
+    .stage{min-height:720px;padding:26px;display:flex;flex-direction:column}.top{display:flex;align-items:center;justify-content:space-between;gap:12px}.brand{font-size:14px;font-weight:900;letter-spacing:.16em;text-transform:uppercase}.status{display:flex;gap:8px;align-items:center;color:var(--muted);font-size:13px}.dot{width:9px;height:9px;border-radius:999px;background:#ff5f57;box-shadow:0 0 16px currentColor}.dot.ok{background:var(--good)}
+    .hero{text-align:center;padding:48px 8px 26px}.eyebrow{color:var(--muted);text-transform:uppercase;letter-spacing:.18em;font-size:12px;font-weight:800}.secret{margin:16px 0 8px;font-size:clamp(44px,9vw,92px);font-weight:1000;letter-spacing:.12em}.sub{color:var(--muted);font-size:15px}.winner{margin:22px auto 0;max-width:560px;padding:18px;border-radius:20px;background:linear-gradient(135deg,rgba(75,227,139,.15),rgba(124,92,255,.13));border:1px solid rgba(75,227,139,.38);display:none}.winner.show{display:block}.winner b{font-size:22px}.winner small{display:block;color:var(--muted);margin-top:5px}
+    .board{margin-top:18px}.board-head{display:grid;grid-template-columns:64px minmax(0,1fr) 110px;gap:12px;padding:0 14px 8px;color:var(--muted);font-size:11px;text-transform:uppercase;font-weight:900;letter-spacing:.12em}.row{display:grid;grid-template-columns:64px minmax(0,1fr) 110px;gap:12px;align-items:center;padding:13px 14px;margin:8px 0;border-radius:18px;background:#0a151f;border:1px solid #182837}.rank{font-size:21px;font-weight:1000}.guess strong{display:block;font-size:18px}.guess span{font-size:12px;color:var(--muted)}.heat{text-align:right;font-weight:900}.row.win{border-color:rgba(75,227,139,.55);background:rgba(75,227,139,.09)}.row.hot .heat{color:var(--hot)}.row.warm .heat{color:#f6db6c}.row.cold .heat{color:var(--bad)}
+    .empty{padding:38px;text-align:center;color:var(--muted);border:1px dashed #284054;border-radius:20px}.footer-note{margin-top:auto;padding-top:20px;color:#62788b;font-size:12px;text-align:center}
+    .panel{padding:18px;height:max-content;position:sticky;top:18px}.panel h2{font-size:17px;margin:0 0 16px}.field{margin-bottom:12px}.field label{display:block;color:var(--muted);font-size:12px;font-weight:700;margin:0 0 6px}.field input{width:100%;border:1px solid #294052;background:#07121b;color:white;border-radius:14px;padding:12px 13px;outline:none}.field input:focus{border-color:var(--accent)}.actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}.btn{border:0;border-radius:14px;padding:12px 14px;background:var(--accent);color:#fff;font-weight:900;cursor:pointer}.btn.secondary{background:#182837}.btn.full{width:100%;margin-top:8px}.stats{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:18px 0}.stat{padding:12px;border:1px solid #203444;border-radius:14px}.stat b{font-size:20px}.stat span{display:block;color:var(--muted);font-size:11px;margin-top:3px}.log{font-size:12px;color:var(--muted);line-height:1.55;padding:12px;background:#09131c;border-radius:14px;min-height:62px}.tiny{font-size:11px;color:#698096;line-height:1.5;margin-top:10px}
+    @media(max-width:820px){.app{grid-template-columns:1fr;padding:10px}.stage{min-height:650px;padding:18px}.panel{position:static}.hero{padding-top:36px}.board-head,.row{grid-template-columns:56px minmax(0,1fr) 86px}.secret{font-size:clamp(38px,14vw,72px)}}
+  </style>
+</head>
+<body>
+<div class="app">
+  <main class="stage">
+    <div class="top"><div class="brand">🎯 Adivinhando</div><div class="status"><span id="modelDot" class="dot"></span><span id="modelStatus">modelo semântico desligado</span></div></div>
+    <section class="hero">
+      <div class="eyebrow">Adivinhe a palavra secreta</div>
+      <div id="secret" class="secret">_ _ _</div>
+      <div id="roundInfo" class="sub">Defina uma palavra no painel para iniciar.</div>
+      <div id="winner" class="winner"><b id="winnerText"></b><small id="winnerMeta"></small></div>
+    </section>
+    <section class="board">
+      <div class="board-head"><span>Rank</span><span>Tentativa</span><span>Proximidade</span></div>
+      <div id="rows"><div class="empty">As melhores tentativas da live aparecem aqui.</div></div>
+    </section>
+    <div class="footer-note">Comentários repetidos do mesmo usuário são ignorados na mesma rodada.</div>
+  </main>
+
+  <aside class="panel">
+    <h2>Controle da rodada</h2>
+    <div class="field"><label>Palavra secreta</label><input id="answerInput" autocomplete="off" placeholder="Ex.: uva" /></div>
+    <div class="actions"><button id="startBtn" class="btn">Iniciar</button><button id="clearBtn" class="btn secondary">Limpar</button></div>
+
+    <div class="stats"><div class="stat"><b id="tries">0</b><span>TENTATIVAS</span></div><div class="stat"><b id="players">0</b><span>JOGADORES</span></div></div>
+
+    <h2>Simular comentário</h2>
+    <div class="field"><label>@usuário</label><input id="userInput" value="teste" /></div>
+    <div class="field"><label>Comentário</label><input id="guessInput" placeholder="Ex.: vinho" /></div>
+    <button id="sendBtn" class="btn full">Enviar tentativa</button>
+
+    <h2 style="margin-top:22px">Conector</h2>
+    <div id="connectorLog" class="log">Aguardando eventos do conector…</div>
+    <div class="tiny">Aceita <b>window.postMessage</b> com <code>{type:'tiktok-comment', username, comment, avatar}</code>. Também aceita WebSocket por <code>?ws=wss://…</code>.</div>
+  </aside>
+</div>
+
+<script type="module">
+  const $ = (id) => document.getElementById(id);
+  const state = { answer:'', answerVector:null, round:0, tries:0, people:new Set(), seen:new Set(), results:[], extractor:null, loading:false, finished:false, cache:new Map() };
+
+  function normalize(text='') {
+    return String(text).trim().toLocaleLowerCase('pt-BR').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9ç\- ]/gi,'').replace(/\s+/g,' ').trim();
+  }
+  function mask(word){ return [...word].map(c => c === ' ' ? '   ' : '_').join(' '); }
+  function dot(a,b){ let s=0; const n=Math.min(a.length,b.length); for(let i=0;i<n;i++) s+=a[i]*b[i]; return s; }
+  function similarityToRank(sim){
+    // "Rank de distância": escala estável para live; #1 é reservado ao acerto exato.
+    const x=Math.max(0,Math.min(1,(sim+1)/2));
+    return Math.max(2, Math.min(99999, Math.round(2 + Math.pow(1-x,3.25)*99997)));
+  }
+  function heat(sim, exact=false){
+    if(exact) return {label:'✅ ACERTOU', cls:'win'};
+    if(sim>=.72) return {label:'🔥🔥🔥', cls:'hot'};
+    if(sim>=.55) return {label:'🔥 QUENTE', cls:'hot'};
+    if(sim>=.38) return {label:'🟡 MORNO', cls:'warm'};
+    return {label:'🥶 FRIO', cls:'cold'};
+  }
+  function fallbackSimilarity(guess,answer){
+    // Só entra se o modelo não puder carregar. Não tenta fingir semântica real.
+    if(guess===answer) return 1;
+    const ga=new Set(guess.split('')); const aa=new Set(answer.split('')); let hit=0; ga.forEach(x=>{if(aa.has(x))hit++});
+    return Math.min(.34, hit/Math.max(ga.size,aa.size)*.34);
+  }
+  async function ensureModel(){
+    if(state.extractor) return state.extractor;
+    if(state.loading) { while(state.loading) await new Promise(r=>setTimeout(r,100)); return state.extractor; }
+    state.loading=true; $('modelStatus').textContent='carregando modelo semântico…';
+    try{
+      const { pipeline } = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.0.1');
+      state.extractor = await pipeline('feature-extraction','Xenova/paraphrase-multilingual-MiniLM-L12-v2');
+      $('modelDot').classList.add('ok'); $('modelStatus').textContent='semântica online';
+    }catch(err){
+      console.error(err); $('modelStatus').textContent='fallback local'; $('connectorLog').textContent='Modelo semântico não carregou; usando fallback temporário.';
+    }finally{ state.loading=false; }
+    return state.extractor;
+  }
+  async function embed(text){
+    const key=normalize(text); if(state.cache.has(key)) return state.cache.get(key);
+    const ext=await ensureModel(); if(!ext) return null;
+    const out=await ext(key,{pooling:'mean',normalize:true}); const vec=Array.from(out.data); state.cache.set(key,vec); return vec;
+  }
+  async function startRound(){
+    const raw=$('answerInput').value; const answer=normalize(raw); if(!answer) return;
+    state.answer=answer; state.round++; state.tries=0; state.people.clear(); state.seen.clear(); state.results=[]; state.finished=false; state.answerVector=null;
+    $('secret').textContent=mask(answer); $('winner').classList.remove('show'); $('roundInfo').textContent=`Rodada ${state.round} • comentários valem como tentativa`; render();
+    $('connectorLog').textContent='Preparando a palavra secreta…';
+    state.answerVector=await embed(answer);
+    $('connectorLog').textContent=state.answerVector ? 'Rodada pronta. Aguardando comentários do TikTok.' : 'Rodada pronta em modo fallback.';
+    $('guessInput').focus();
+  }
+  function clearRound(){ state.tries=0;state.people.clear();state.seen.clear();state.results=[];state.finished=false;$('winner').classList.remove('show');render(); }
+  async function submitGuess(username,comment,avatar=''){
+    if(!state.answer || state.finished) return;
+    const guess=normalize(comment); username=String(username||'anonimo').trim()||'anonimo'; if(!guess || guess.length>60) return;
+    const key=`${username.toLowerCase()}::${guess}`; if(state.seen.has(key)) return; state.seen.add(key);
+    state.tries++; state.people.add(username.toLowerCase());
+    const exact=guess===state.answer; let sim=1;
+    if(!exact){ const gv=await embed(guess); sim=(gv&&state.answerVector)?dot(gv,state.answerVector):fallbackSimilarity(guess,state.answer); }
+    const rank=exact?1:similarityToRank(sim); const h=heat(sim,exact);
+    state.results.push({username,guess,rank,sim,avatar,exact,heat:h.label,cls:h.cls,at:Date.now()});
+    state.results.sort((a,b)=>a.rank-b.rank || a.at-b.at); state.results=state.results.slice(0,30);
+    if(exact){ state.finished=true; $('secret').textContent=state.answer.toUpperCase(); $('winnerText').textContent=`@${username} acertou: ${state.answer.toUpperCase()}!`; $('winnerMeta').textContent=`Tentativa ${state.tries} • posição #1`; $('winner').classList.add('show'); $('roundInfo').textContent='Rodada encerrada ✅'; }
+    $('connectorLog').textContent=`@${username}: ${guess} → #${rank.toLocaleString('pt-BR')}`; render();
+  }
+  function render(){
+    $('tries').textContent=state.tries.toLocaleString('pt-BR'); $('players').textContent=state.people.size.toLocaleString('pt-BR');
+    const best=state.results.slice(0,10); if(!best.length){$('rows').innerHTML='<div class="empty">As melhores tentativas da live aparecem aqui.</div>';return;}
+    $('rows').innerHTML=best.map(r=>`<div class="row ${r.cls}"><div class="rank">#${r.rank.toLocaleString('pt-BR')}</div><div class="guess"><strong>${escapeHtml(r.guess)}</strong><span>@${escapeHtml(r.username)}</span></div><div class="heat">${r.heat}</div></div>`).join('');
+  }
+  function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));}
+
+  $('startBtn').onclick=startRound; $('clearBtn').onclick=clearRound;
+  $('sendBtn').onclick=()=>{const g=$('guessInput').value; $('guessInput').value=''; submitGuess($('userInput').value,g);};
+  $('guessInput').addEventListener('keydown',e=>{if(e.key==='Enter')$('sendBtn').click()});
+  $('answerInput').addEventListener('keydown',e=>{if(e.key==='Enter')startRound()});
+
+  // Entrada genérica para o conector TikTok/Live+: window.postMessage({type:'tiktok-comment', username:'joao', comment:'vinho'})
+  window.addEventListener('message',e=>{ const d=e.data||{}; if(d.type==='tiktok-comment'||d.type==='comment') submitGuess(d.username||d.user||d.nickname,d.comment||d.text,d.avatar||''); });
+  window.Adivinhando={comment:(username,comment,avatar='')=>submitGuess(username,comment,avatar),start:(answer)=>{$('answerInput').value=answer;return startRound();},state};
+
+  // WebSocket opcional: ?ws=wss://seu-conector
+  const wsUrl=new URLSearchParams(location.search).get('ws');
+  if(wsUrl){ try{ const ws=new WebSocket(wsUrl); ws.onopen=()=>{$('connectorLog').textContent='WebSocket conectado. Aguardando comentários…'}; ws.onmessage=(ev)=>{try{const d=JSON.parse(ev.data); if(d.type==='comment'||d.type==='tiktok-comment') submitGuess(d.username||d.user||d.nickname,d.comment||d.text,d.avatar||'')}catch{}}; ws.onerror=()=>{$('connectorLog').textContent='Falha na conexão WebSocket.'}; }catch{} }
+
+  render();
+</script>
+</body>
+</html>
