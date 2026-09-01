@@ -11,16 +11,23 @@ export async function bootAdivinhando(){
   ]);
 
   const $=id=>document.getElementById(id);
+  const TEST_WORDS=['uva','banana','maçã','laranja','mamão','melancia','morango','abacaxi','limão','manga','vinho','suco','fruta','comida','arroz','feijão','pizza','pão','queijo','café','leite','ovo','carro','moto','avião','barco','casa','porta','janela','mesa','cadeira','cama','sofá','telefone','computador','livro','caneta','bola','camisa','sapato','cachorro','gato','cavalo','leão','tigre','elefante','macaco','peixe','pássaro','árvore','flor','praia','rio','montanha','chuva','sol','lua','estrela','fogo','água','terra','amor','feliz','rápido','grande','pequeno'];
   const manifest={protocol:'liveplus-game-manifest-v1',gameId:'adivinhando',name:'Adivinhando',icon:'🎯',version,actions:[
     {id:'next_round',label:'Próxima palavra',icon:'⏭️',params:[]},
     {id:'start_round',label:'Iniciar rodada',icon:'▶️',params:[{id:'category',label:'CATEGORIA',type:'select',default:'mixed',options:[{value:'mixed',label:'Misturado'},{value:'animais',label:'Animais'},{value:'frutas',label:'Frutas'},{value:'comidas',label:'Comidas'},{value:'objetos',label:'Objetos'}]}]},
     {id:'stop_rounds',label:'Parar rodadas',icon:'⏹️',params:[]}
+  ],adminTools:[
+    {id:'simulate_comments',label:'Simular comentários',icon:'🧪',description:'Gera palpites aleatórios no próprio Adivinhando para testar ranking e HUD. Não entra em regras ou doações.',params:[{id:'count',label:'QUANTIDADE',type:'number',default:50,min:1,max:500,step:1},{id:'intervalMs',label:'INTERVALO',type:'select',default:'500',options:[{value:'1000',label:'1 por segundo'},{value:'500',label:'2 por segundo'},{value:'250',label:'4 por segundo'},{value:'100',label:'10 por segundo'}]}]},
+    {id:'simulate_comment',label:'Enviar palavra de teste',icon:'💬',description:'Envia um único palpite manual de teste para a rodada atual.',params:[{id:'word',label:'PALAVRA',type:'text',default:''}]},
+    {id:'stop_comment_simulation',label:'Parar simulação',icon:'⏹️',description:'Interrompe uma sequência automática de comentários de teste.',params:[]}
   ]};
 
   let game=null;
   let liveplus=null;
+  let simulationTimer=null;
+  let simulatedSent=0;
 
-  function escapeHtml(value){return String(value).replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[char]))}
+  function escapeHtml(value){return String(value).replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#039;'}[char]))}
   function setStatus(text,kind=''){
     const status=$('pairStatus');if(status){status.textContent=text;status.className='status '+kind}
     $('panelButton')?.classList.toggle('online',kind==='ok');
@@ -44,11 +51,29 @@ export async function bootAdivinhando(){
     $('rows').innerHTML=best.length?best.map(row=>`<div class="row ${row.cls}"><div class="rank">#${row.rank.toLocaleString('pt-BR')}</div><div class="guess"><strong>${escapeHtml(row.guess)}</strong><span>@${escapeHtml(row.username)}</span></div><div class="heat">${row.heat}</div></div>`).join(''):'<div class="empty">As melhores tentativas aparecem aqui.</div>';
   }
 
+  function stopCommentSimulation(){clearInterval(simulationTimer);simulationTimer=null;simulatedSent=0;return true}
+  function randomTestWord(){const answer=String(game?.state?.answer||'');const pool=TEST_WORDS.filter(word=>String(word).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase()!==answer);return pool[Math.floor(Math.random()*pool.length)]||'teste'}
+  function simulatedUsername(index=0){return `teste_${String(index+1).padStart(2,'0')}`}
+  function simulateOne(word,username){const text=String(word||'').trim();if(!text)return false;game.guess(username||simulatedUsername(simulatedSent),text);simulatedSent++;return true}
+  function startCommentSimulation(payload={}){
+    stopCommentSimulation();
+    const count=Math.max(1,Math.min(500,Number(payload.count)||50));
+    const interval=Math.max(100,Math.min(5000,Number(payload.intervalMs)||500));
+    let done=0;
+    const tick=()=>{if(done>=count||game?.state?.finished){stopCommentSimulation();return}simulateOne(randomTestWord(),simulatedUsername(done));done++};
+    tick();
+    if(done<count&&!game?.state?.finished)simulationTimer=setInterval(tick,interval);
+    return true;
+  }
+
   function executeCommand(data={}){
     const action=String(data.action||data.command||''),payload=data.params&&typeof data.params==='object'?data.params:{};
     if(action==='next_round'){game.start(payload);return true}
     if(action==='start_round'){game.resume(payload);return true}
     if(action==='stop_rounds'){game.stop();return true}
+    if(action==='simulate_comments')return startCommentSimulation(payload);
+    if(action==='simulate_comment')return simulateOne(payload.word,'teste_manual');
+    if(action==='stop_comment_simulation')return stopCommentSimulation();
     return false;
   }
   function ingestLiveEvent(data={}){
@@ -79,7 +104,7 @@ export async function bootAdivinhando(){
   });
 
   const syncTimer=setInterval(()=>{if(liveplus.getTransport()!=='offline')liveplus.sendState(game.snapshot('heartbeat'))},30000);
-  window.addEventListener('pagehide',()=>clearInterval(syncTimer),{once:true});
+  window.addEventListener('pagehide',()=>{clearInterval(syncTimer);stopCommentSimulation()},{once:true});
 
   $('versionLabel').textContent=version;
   document.title=`Adivinhando · ${version}`;
