@@ -10,7 +10,7 @@ export async function createGame({version,onState,onEvent}){
   ]);
   const{normalizeText,semanticRank,heatLabel,dotProduct,createSemanticEngine}=semanticApi;
   const semantic=createSemanticEngine();
-  const state={answer:'',category:'',round:0,tries:0,people:new Set(),seen:new Set(),results:[],finished:false,auto:true,timer:null,nextTimer:null,answerVector:null};
+  const state={answer:'',category:'',round:0,tries:0,people:new Set(),seen:new Set(),results:[],finished:false,winner:'',auto:true,timer:null,nextTimer:null,answerVector:null};
 
   function history(){try{return JSON.parse(localStorage.getItem(HISTORY_KEY)||'[]')}catch{return[]}}
   function saveUsed(word){const h=history().filter(x=>x!==word);h.push(word);localStorage.setItem(HISTORY_KEY,JSON.stringify(h.slice(-RECENT_LIMIT)))}
@@ -25,7 +25,7 @@ export async function createGame({version,onState,onEvent}){
     return source[Math.floor(Math.random()*source.length)]||all[0];
   }
   function snapshot(scope='round'){
-    return{scope,gameId:'adivinhando',version,round:state.round,category:state.category,tries:state.tries,players:state.people.size,finished:state.finished,best:state.results.slice(0,10).map(({username,guess,rank})=>({username,guess,rank}))};
+    return{scope,gameId:'adivinhando',version,round:state.round,category:state.category,tries:state.tries,players:state.people.size,finished:state.finished,winner:state.finished?state.winner:'',best:state.results.slice(0,10).map(({username,guess,rank})=>({username,guess,rank}))};
   }
   function emitState(scope){onState?.(snapshot(scope))}
   function mask(word){return[...word].map(char=>char===' '?'   ':'_').join(' ')}
@@ -35,7 +35,7 @@ export async function createGame({version,onState,onEvent}){
     const category=options.category||'mixed';
     const pick=options.word?{word:options.word,category:options.category||'objetos'}:chooseWord(category);
     if(!pick)return null;
-    state.answer=normalizeText(pick.word);state.category=pick.category;saveUsed(state.answer);state.round++;state.tries=0;state.people.clear();state.seen.clear();state.results=[];state.finished=false;state.answerVector=null;
+    state.answer=normalizeText(pick.word);state.category=pick.category;saveUsed(state.answer);state.round++;state.tries=0;state.people.clear();state.seen.clear();state.results=[];state.finished=false;state.winner='';state.answerVector=null;
     state.answerVector=await semantic.embed(state.answer);
     state.timer=setTimeout(()=>finish(null,true),Number(options.durationMs)||ROUND_MS);
     emitState('round_started');onEvent?.({gameId:'adivinhando',event:'round_started',round:state.round,category:state.category});
@@ -44,11 +44,11 @@ export async function createGame({version,onState,onEvent}){
 
   function finish(username,timeout=false){
     if(state.finished)return view();
-    state.finished=true;clearTimeout(state.timer);
+    state.finished=true;state.winner=username||'';clearTimeout(state.timer);
     emitState('round_finished');
     onEvent?.({gameId:'adivinhando',event:username?'winner':'round_timeout',round:state.round,username:username||'',answer:state.answer});
     if(state.auto)state.nextTimer=setTimeout(()=>start(),timeout?7000:5000);
-    return view(username);
+    return view();
   }
 
   async function guess(username,comment){
@@ -63,12 +63,12 @@ export async function createGame({version,onState,onEvent}){
     state.results.push({username,guess:text,rank,sim:similarity,exact,heat:heat.label,cls:heat.cls,at:Date.now()});
     state.results.sort((a,b)=>a.rank-b.rank||a.at-b.at);state.results=state.results.slice(0,30);
     emitState('guess');if(exact)finish(username,false);
-    return view(exact?username:null);
+    return view();
   }
 
   function stop(){state.auto=false;clearTimeout(state.timer);clearTimeout(state.nextTimer)}
   function resume(options={}){state.auto=true;return start(options)}
-  function view(winner=''){return{answer:state.answer,category:state.category,categoryLabel:CATEGORY_LABELS[state.category]||'Categoria',round:state.round,tries:state.tries,players:state.people.size,finished:state.finished,masked:mask(state.answer),winner,results:state.results.slice(0,10)}}
+  function view(){return{answer:state.answer,category:state.category,categoryLabel:CATEGORY_LABELS[state.category]||'Categoria',round:state.round,tries:state.tries,players:state.people.size,finished:state.finished,masked:mask(state.answer),winner:state.winner,results:state.results.slice(0,10)}}
 
   return{state,start,resume,stop,guess,finish,view,snapshot,semantic};
 }
