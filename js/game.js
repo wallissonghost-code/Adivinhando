@@ -1,11 +1,14 @@
-import{WORD_BANK,CATEGORY_LABELS}from'../data/words.js';
-import{normalizeText,semanticRank,heatLabel,dotProduct,createSemanticEngine}from'./semantic.js';
-
 const HISTORY_KEY='adivinhando-word-history-v1';
 const RECENT_LIMIT=120;
 const ROUND_MS=180000;
 
-export function createGame({version,onState,onEvent}){
+export async function createGame({version,onState,onEvent}){
+  const build=new URL(import.meta.url).searchParams.get('v')||Date.now().toString();
+  const [{WORD_BANK,CATEGORY_LABELS},semanticApi]=await Promise.all([
+    import(`../data/words.js?v=${encodeURIComponent(build)}`),
+    import(`./semantic.js?v=${encodeURIComponent(build)}`)
+  ]);
+  const{normalizeText,semanticRank,heatLabel,dotProduct,createSemanticEngine}=semanticApi;
   const semantic=createSemanticEngine();
   const state={answer:'',category:'',round:0,tries:0,people:new Set(),seen:new Set(),results:[],finished:false,auto:true,timer:null,nextTimer:null,answerVector:null};
 
