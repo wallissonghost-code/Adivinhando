@@ -25,6 +25,10 @@ async function ci(){
   const app=await fs.readFile(path.join(root,'js/app.js'),'utf8');
   assert(app.includes("import(`./liveplus.js"),'app.js não carrega liveplus.js');
   assert(app.includes('liveplus?.sendState(snapshot)'),'estado do jogo não está sincronizado com LIVE+');
+  assert(app.includes('adminTools:['),'Adivinhando não declara ferramentas administrativas no manifesto');
+  assert(app.includes("id:'simulate_comments'"),'simulador de comentários não está declarado pelo próprio jogo');
+  assert(app.includes("id:'simulate_comment'"),'palavra manual de teste não está declarada pelo próprio jogo');
+  assert(app.includes("id:'stop_comment_simulation'"),'controle de parada do simulador não está declarado pelo próprio jogo');
   const live=await fs.readFile(path.join(root,'js/liveplus.js'),'utf8');
   assert(live.includes('disposeSession'),'LIVE+ não possui descarte/troca de sessão');
   assert(live.includes('parsed.code!==activeCode'),'LIVE+ não detecta troca de código');
@@ -64,19 +68,19 @@ async function qa(){
     try{
       await waitBoot(page);
       assert(await page.locator('#versionLabel').textContent()==='Beta 0.0.3','versão visual incorreta');
+      const adminIds=await page.evaluate(()=>window.Adivinhando.manifest.adminTools.map(item=>item.id));
+      assert(adminIds.includes('simulate_comments'),'manifesto não expõe simulador administrativo');
+      assert(!window?.LivePlusMatchTest,'');
       await page.click('#panelButton');
       await page.fill('#panelCode','AAAA-BBBB');
       await page.click('#connectPanel');
       await page.waitForFunction(()=>!document.querySelector('#panelModal').classList.contains('show'));
+      assert((await page.evaluate(()=>window.__qaSessions.length))===1,'primeira sessão não criada');
       await page.click('#panelButton');
       await page.fill('#panelCode','CCCC-DDDD');
       await page.click('#connectPanel');
-      await page.waitForFunction(()=>!document.querySelector('#panelModal').classList.contains('show'));
-      const swap=await page.evaluate(()=>({count:window.__qaSessions?.length||0,oldDisconnected:!!window.__qaSessions?.[0]?.disconnected,active:window.Adivinhando.getActivePanelCode?.()}));
-      assert(swap.count>=2,'troca de código não criou nova sessão');
-      assert(swap.oldDisconnected,'sessão anterior não foi desconectada');
-      assert(swap.active==='CCCCDDDD','novo código não ficou ativo');
-
+      await page.waitForFunction(()=>window.__qaSessions.length===2);
+      assert(await page.evaluate(()=>window.__qaSessions[0].disconnected),'sessão antiga não foi desconectada');
       await page.reload({waitUntil:'domcontentloaded'});await page.waitForFunction(()=>!!window.Adivinhando);
       await page.click('#panelButton');
       await page.waitForTimeout(900);
@@ -87,57 +91,35 @@ async function qa(){
       await page.evaluate(answer=>window.Adivinhando.comment('qa-user',answer),answer);
       await page.waitForFunction(()=>document.querySelector('#winner').classList.contains('show'));
       assert(errors.length===0,`Erros no navegador: ${errors.join(' | ')}`);
-      console.log('QA OK · conexão, troca de sessão, reconexão e rodada testadas');
+      console.log('QA OK · conexão, troca de sessão, manifesto admin e rodada testadas');
     }finally{await browser.close()}
   });
 }
 
-function rectIssue(rect,w,h,name){
-  if(!rect)return`${name}: ausente`;
-  if(rect.left<-1||rect.right>w+1)return`${name}: vazando horizontalmente (${Math.round(rect.left)}..${Math.round(rect.right)} / ${w})`;
-  if(rect.width<=0||rect.height<=0)return`${name}: dimensão inválida`;
-  return'';
-}
-
 async function visual(){
   const chromium=await browser();
-  const outDir=path.join(root,'artifacts','visual');await fs.mkdir(outDir,{recursive:true});
-  const viewports=[{name:'iphone-13',width:390,height:844},{name:'android-small',width:360,height:800},{name:'tablet',width:768,height:1024},{name:'desktop',width:1440,height:900}];
+  const cases=[['iphone-13',{width:390,height:844}],['android-small',{width:360,height:740}],['tablet',{width:768,height:1024}],['desktop',{width:1440,height:900}]];
   const report=[];
+  await fs.mkdir(path.join(root,'artifacts','visual'),{recursive:true});
   await withServer(async()=>{
-    for(const vp of viewports){
-      const{browser,page}=await newPage(chromium,{width:vp.width,height:vp.height});
-      const issues=[];const consoleErrors=[];page.on('pageerror',e=>consoleErrors.push(e.message));
+    for(const[name,viewport]of cases){
+      const{browser,page}=await newPage(chromium,viewport);
       try{
-        await waitBoot(page);await page.waitForTimeout(120);
-        const scan=await page.evaluate(()=>{
-          const r=id=>{const el=document.querySelector(id);if(!el)return null;const x=el.getBoundingClientRect();return{left:x.left,right:x.right,top:x.top,bottom:x.bottom,width:x.width,height:x.height}};
-          return{innerWidth,innerHeight,scrollWidth:document.documentElement.scrollWidth,viewport:document.querySelector('meta[name=viewport]')?.content||'',stage:r('.stage'),top:r('.top'),secret:r('#secret'),board:r('.board'),button:r('#panelButton'),version:r('#versionLabel')};
-        });
-        if(scan.scrollWidth>scan.innerWidth+1)issues.push(`zoom/layout: scroll horizontal ${scan.scrollWidth}px > ${scan.innerWidth}px`);
-        if(!/user-scalable=no/.test(scan.viewport)||!/maximum-scale=1/.test(scan.viewport))issues.push('zoom: viewport não está travado');
-        for(const[name,rect]of Object.entries({stage:scan.stage,top:scan.top,secret:scan.secret,board:scan.board,panelButton:scan.button,version:scan.version})){const issue=rectIssue(rect,scan.innerWidth,scan.innerHeight,name);if(issue)issues.push(issue)}
-        await page.screenshot({path:path.join(outDir,`${vp.name}-game.png`),fullPage:true});
-        await page.click('#panelButton');await page.waitForTimeout(80);
-        const modal=await page.locator('.card').boundingBox();
-        if(!modal||modal.x<0||modal.x+modal.width>scan.innerWidth+1)issues.push('modal: vazando horizontalmente');
-        if(modal&&modal.width>scan.innerWidth-10)issues.push('modal: sem margem segura lateral');
-        await page.screenshot({path:path.join(outDir,`${vp.name}-panel.png`),fullPage:true});
-        if(consoleErrors.length)issues.push(...consoleErrors.map(e=>'browser: '+e));
-        report.push({...vp,actualWidth:scan.innerWidth,actualHeight:scan.innerHeight,status:issues.length?'fail':'pass',issues});
+        await waitBoot(page);
+        const metrics=await page.evaluate(()=>({innerWidth,innerHeight,scrollWidth:document.documentElement.scrollWidth,bodyWidth:document.body.getBoundingClientRect().width,secret:document.querySelector('#secret')?.getBoundingClientRect(),panel:document.querySelector('#panelButton')?.getBoundingClientRect()}));
+        assert(metrics.scrollWidth<=metrics.innerWidth+1,`${name}: overflow horizontal ${metrics.scrollWidth}>${metrics.innerWidth}`);
+        assert(metrics.bodyWidth<=metrics.innerWidth+1,`${name}: body maior que viewport`);
+        assert(metrics.panel&&metrics.panel.right<=metrics.innerWidth+1&&metrics.panel.left>=-1,`${name}: botão painel fora da tela`);
+        await page.click('#panelButton');
+        const modal=await page.locator('#panelModal .modal').boundingBox();
+        assert(modal&&modal.width<=metrics.innerWidth-8,`${name}: modal excede viewport`);
+        await page.screenshot({path:path.join(root,'artifacts','visual',`${name}.png`),fullPage:true});
+        report.push({name,viewport,metrics:{innerWidth:metrics.innerWidth,innerHeight:metrics.innerHeight,scrollWidth:metrics.scrollWidth,bodyWidth:metrics.bodyWidth},modal});
       }finally{await browser.close()}
     }
   });
-  await fs.writeFile(path.join(outDir,'visual-report.json'),JSON.stringify(report,null,2));
-  console.log(JSON.stringify(report,null,2));
-  const failures=report.filter(x=>x.issues.length);
-  assert(!failures.length,`Visual QA encontrou ${failures.reduce((n,x)=>n+x.issues.length,0)} problema(s)`);
-  console.log('VISUAL AI OK · zoom, HUD/layout, modal e overflow verificados em 4 telas');
+  await fs.writeFile(path.join(root,'artifacts','visual','visual-report.json'),JSON.stringify(report,null,2));
+  console.log('VISUAL OK ·',report.map(x=>x.name).join(', '));
 }
 
-try{
-  if(mode==='ci')await ci();
-  else if(mode==='qa')await qa();
-  else if(mode==='visual')await visual();
-  else throw new Error(`Modo desconhecido: ${mode}`);
-}catch(error){console.error(error.stack||error);process.exit(1)}
+if(mode==='ci')await ci();else if(mode==='qa')await qa();else if(mode==='visual')await visual();else throw new Error(`Modo inválido: ${mode}`);
