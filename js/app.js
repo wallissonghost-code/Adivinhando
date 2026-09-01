@@ -58,7 +58,11 @@ export async function bootAdivinhando(){
     game.guess(user,text);return true;
   }
 
-  game=await createGame({version,onState:()=>render(),onEvent:event=>liveplus?.sendEvent(event)});
+  game=await createGame({
+    version,
+    onState:snapshot=>{render();liveplus?.sendState(snapshot)},
+    onEvent:event=>liveplus?.sendEvent(event)
+  });
   liveplus=createLivePlusController({
     manifest,
     onStatus:setStatus,
@@ -66,11 +70,8 @@ export async function bootAdivinhando(){
     onCommand:(data,session)=>{const ok=executeCommand(data);if(!ok)session?.sendState?.({scope:'command',gameId:'adivinhando',commandStatus:'unsupported',action:String(data.action||data.command||'')})},
     onMessage:ingestLiveEvent
   });
-  const originalStateSender=game.snapshot;
-  const sendCurrentState=scope=>liveplus.sendState(originalStateSender(scope));
-  const gameStateListener=game;
-  // Keep LIVE+ state synchronized without coupling the game engine to transport internals.
-  const syncTimer=setInterval(()=>{if(liveplus.getTransport()!=='offline')sendCurrentState('heartbeat')},30000);
+
+  const syncTimer=setInterval(()=>{if(liveplus.getTransport()!=='offline')liveplus.sendState(game.snapshot('heartbeat'))},30000);
   window.addEventListener('pagehide',()=>clearInterval(syncTimer),{once:true});
 
   $('versionLabel').textContent=version;
