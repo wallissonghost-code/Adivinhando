@@ -70,7 +70,8 @@ async function qa(){
       assert(await page.locator('#versionLabel').textContent()==='Beta 0.0.3','versão visual incorreta');
       const adminIds=await page.evaluate(()=>window.Adivinhando.manifest.adminTools.map(item=>item.id));
       assert(adminIds.includes('simulate_comments'),'manifesto não expõe simulador administrativo');
-      assert(!window?.LivePlusMatchTest,'');
+      assert(adminIds.includes('simulate_comment'),'manifesto não expõe palavra manual de teste');
+      assert(adminIds.includes('stop_comment_simulation'),'manifesto não expõe parada da simulação');
       await page.click('#panelButton');
       await page.fill('#panelCode','AAAA-BBBB');
       await page.click('#connectPanel');
