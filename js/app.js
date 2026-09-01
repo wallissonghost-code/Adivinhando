@@ -2,6 +2,7 @@ export async function bootAdivinhando(){
   const build=String(window.ADIVINHANDO_BUILD||Date.now());
   const version=String(window.ADIVINHANDO_VERSION||'Beta 0.0.3');
   const params=new URLSearchParams(location.search);
+  if(params.get('qa')==='1')window.ADIVINHANDO_QA=true;
   const [{createGame},{createLivePlusController},{installMobileGuards},{refreshPage,clearCacheAndRefresh}]=await Promise.all([
     import(`./game.js?v=${encodeURIComponent(build)}`),
     import(`./liveplus.js?v=${encodeURIComponent(build)}`),
@@ -66,7 +67,13 @@ export async function bootAdivinhando(){
   liveplus=createLivePlusController({
     manifest,
     onStatus:setStatus,
-    onConnected:()=>{liveplus.sendState(game.snapshot('initial'));setTimeout(()=>$('panelModal')?.classList.remove('show'),450)},
+    onConnected:(_session,info={})=>{
+      liveplus.sendState(game.snapshot('initial'));
+      if(info.manual)setTimeout(()=>{
+        $('panelModal')?.classList.remove('show');
+        $('panelModal')?.setAttribute('aria-hidden','true');
+      },450);
+    },
     onCommand:(data,session)=>{const ok=executeCommand(data);if(!ok)session?.sendState?.({scope:'command',gameId:'adivinhando',commandStatus:'unsupported',action:String(data.action||data.command||'')})},
     onMessage:ingestLiveEvent
   });
@@ -81,15 +88,18 @@ export async function bootAdivinhando(){
 
   $('panelButton').onclick=()=>{
     $('panelModal').classList.add('show');
+    $('panelModal').setAttribute('aria-hidden','false');
     const saved=liveplus.savedCode();if(saved)$('panelCode').value=liveplus.formatCode(saved);
     liveplus.installPasteBridge('panelCode');
+    setTimeout(()=>$('panelCode')?.focus(),0);
   };
-  $('closePanel').onclick=()=>$('panelModal').classList.remove('show');
-  $('panelModal').onclick=event=>{if(event.target===$('panelModal'))$('panelModal').classList.remove('show')};
+  const closePanel=()=>{$('panelModal').classList.remove('show');$('panelModal').setAttribute('aria-hidden','true')};
+  $('closePanel').onclick=closePanel;
+  $('panelModal').onclick=event=>{if(event.target===$('panelModal'))closePanel()};
   $('panelCode').addEventListener('input',event=>{const value=event.target.value;if(!String(value).startsWith('LIVEPLUS1'))event.target.value=liveplus.formatCode(value)});
   $('panelCode').addEventListener('paste',()=>setTimeout(()=>{const parsed=liveplus.parseInput($('panelCode').value);if(parsed.code.length===8)$('panelCode').value=parsed.display},0));
-  $('panelCode').onkeydown=event=>{if(event.key==='Enter')liveplus.connect($('panelCode').value)};
-  $('connectPanel').onclick=()=>liveplus.connect($('panelCode').value);
+  $('panelCode').onkeydown=event=>{if(event.key==='Enter')liveplus.connect($('panelCode').value,{manual:true})};
+  $('connectPanel').onclick=()=>liveplus.connect($('panelCode').value,{manual:true});
   $('refreshPage').onclick=refreshPage;
   $('clearCache').onclick=async()=>{setStatus('Limpando cache…','warn');await clearCacheAndRefresh()};
 
@@ -102,12 +112,13 @@ export async function bootAdivinhando(){
     start:options=>game.resume(options||{}),
     next:options=>game.start(options||{}),
     stop:()=>game.stop(),
-    connectLivePlus:raw=>liveplus.connect(raw),
-    manifest,state:game.state,version,getTransport:liveplus.getTransport
+    connectLivePlus:raw=>liveplus.connect(raw,{manual:true}),
+    manifest,state:game.state,version,getTransport:liveplus.getTransport,
+    getActivePanelCode:liveplus.getActiveCode
   };
 
   const category=params.get('category')||'mixed';
   await game.start({category});render();
   const ticket=params.get('liveplus')||params.get('code')||'';
-  if(ticket)liveplus.connect(ticket);else liveplus.scheduleReconnect(500);
+  if(ticket)liveplus.connect(ticket,{manual:false});else liveplus.scheduleReconnect(500);
 }
