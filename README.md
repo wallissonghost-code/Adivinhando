@@ -1,63 +1,75 @@
 # Adivinhando
 
-Jogo semântico para live em que os comentários dos espectadores viram tentativas automaticamente.
+Jogo semântico para lives em que cada comentário recebido pelo conector LIVE+ vira uma tentativa de descobrir a palavra secreta.
 
-## Como funciona
+## Estado atual
 
-- O host define uma palavra secreta, por exemplo `uva`.
-- Cada comentário recebido vira uma tentativa.
-- `uva` é sempre `#1` e encerra a rodada.
-- As demais palavras recebem uma posição de proximidade semântica.
-- As 10 melhores tentativas aparecem no placar.
-- Tentativas repetidas do mesmo usuário são ignoradas.
-- O jogo usa Transformers.js no navegador e um modelo multilíngue para embeddings; não é necessário cadastrar milhares de palavras manualmente.
+A versão do jogo é definida exclusivamente em `version.json`. O bootstrap lê esse arquivo com `cache: no-store` e usa o campo `build` para versionar os arquivos CSS e JavaScript carregados no navegador.
 
-> Nesta primeira versão, o número exibido é uma **escala de distância semântica para live**, e não a posição exata da palavra dentro de um dicionário português completo. Para um ranking lexical global real, a próxima etapa é pré-calcular um vocabulário PT-BR e consultar esse índice.
-
-## Teste manual
-
-Abra `index.html`, informe a palavra secreta e use o simulador de comentários no painel lateral.
-
-## Integração com o conector
-
-O jogo aceita comentários de três formas.
-
-### JavaScript direto
-
-```js
-window.Adivinhando.comment('joao', 'vinho');
-```
-
-### postMessage
-
-```js
-window.postMessage({
-  type: 'tiktok-comment',
-  username: 'joao',
-  comment: 'vinho',
-  avatar: ''
-});
-```
-
-### WebSocket
-
-Abra a página com:
+## Estrutura
 
 ```text
-?ws=wss://ENDERECO-DO-CONECTOR
+Adivinhando/
+├── index.html
+├── version.json
+├── README.md
+├── assets/
+│   └── styles.css
+├── data/
+│   └── words.js
+└── js/
+    ├── bootstrap.js
+    ├── app.js
+    ├── game.js
+    ├── semantic.js
+    ├── liveplus.js
+    ├── mobile.js
+    └── cache.js
 ```
 
-O WebSocket deve enviar JSON neste formato:
+### Responsabilidades
 
-```json
-{
-  "type": "comment",
-  "username": "joao",
-  "comment": "vinho",
-  "avatar": ""
-}
+- `index.html`: somente a estrutura visual da página.
+- `assets/styles.css`: estilos e layout responsivo.
+- `js/bootstrap.js`: lê `version.json`, carrega CSS, SDK LIVE+ e o aplicativo com cache-busting.
+- `js/app.js`: integra interface, jogo e LIVE+.
+- `js/game.js`: rodada, palavra secreta, tentativas, vencedor e histórico anti-repetição.
+- `js/semantic.js`: modelo de embeddings, similaridade e rank semântico.
+- `js/liveplus.js`: conexão com o Painel Universal, ticket LIVEPLUS1, código de 8 caracteres, estado de transporte e reconexão.
+- `js/mobile.js`: bloqueio de zoom/gestos acidentais no celular.
+- `js/cache.js`: atualizar página e limpar caches/service workers.
+- `data/words.js`: banco de palavras por categoria.
+
+## LIVE+
+
+O jogo usa o SDK v1 do Projeto Daniel e aceita:
+
+- código de 8 caracteres, por exemplo `ABCD-EFGH`;
+- ticket completo `LIVEPLUS1`, incluindo configuração de relay;
+- reconexão automática usando o código salvo localmente.
+
+Manifesto atual do jogo:
+
+- `gameId`: `adivinhando`
+- ações: iniciar rodada, próxima palavra e parar rodadas.
+
+Os comentários recebidos como `comment`, `chat`, `tiktok-comment` ou `tiktok_comment` são convertidos automaticamente em tentativas.
+
+Também permanece disponível a API JavaScript:
+
+```js
+window.Adivinhando.comment('usuario', 'palpite');
+window.Adivinhando.start({ category: 'animais' });
+window.Adivinhando.next();
+window.Adivinhando.stop();
 ```
 
-## Próxima etapa recomendada
+## Ranking semântico
 
-Ligar o evento real de comentário do conector TikTok/Live+ ao método `window.Adivinhando.comment(...)` ou ao WebSocket, e depois substituir a escala estimada por um índice PT-BR pré-calculado caso seja necessário ter rankings globais exatos como `#37`, `#876`, `#12500`.
+`#1` representa a palavra exata. Os demais números são atualmente uma escala estimada derivada da similaridade dos embeddings do modelo `Xenova/paraphrase-multilingual-MiniLM-L12-v2`.
+
+Ainda não é um rank lexical global igual ao Contexto. A próxima evolução prevista é criar um vocabulário de referência PT-BR e pré-calcular a ordenação semântica por palavra-alvo.
+
+## Publicação
+
+O projeto é servido pelo GitHub Pages. Para uma nova versão, altere `version` e `build` em `version.json`; o carregador propaga o novo build para os recursos da aplicação.
